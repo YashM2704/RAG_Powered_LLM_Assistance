@@ -2,7 +2,8 @@ from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
-
+from sentence_transformers import CrossEncoder
+import re
 CHROMA_DB_DIR = "chroma_db"
 
 # Load embeddings once
@@ -14,7 +15,9 @@ llm = ChatOllama(
     model="llama3"
 )
 
-
+reranker = CrossEncoder(
+    "cross-encoder/ms-marco-MiniLM-L-6-v2"
+)
 def get_vector_store():
 
     return Chroma(
@@ -38,6 +41,13 @@ STRICT RULES:
 5. If the context is unrelated to the question, return:
    "I couldn't find that information in the documents."
 6. Do not provide generic explanations.
+7. For emails, phone numbers, URLs, names,
+   and identifiers, copy them exactly from
+   the context without modification.
+
+8. If the answer is a single value
+   (email, phone number, URL, date),
+   return only that value.
 
 Context:
 {context}
@@ -52,14 +62,43 @@ Answer:
 
 def ask_question(question: str):
 
+    question_lower = question.lower()
     vector_store = get_vector_store()
 
     # MMR Retrieval
     docs = vector_store.max_marginal_relevance_search(
         query=question,
-        k=4,
-        fetch_k=10
+        k=10,
+        fetch_k=20
     )
+    
+    docs = rerank_documents(
+    question,
+    docs
+    )
+    
+    docs = docs[:4]
+
+    if "email" in question_lower:
+        email_match = extract_email(docs)
+        if email_match:
+            email, source_doc = email_match
+            return {
+                "answer": email,
+                "sources": [
+                    {
+                        "file": source_doc.metadata.get(
+                            "source_file",
+                            "Unknown File"
+                        ),
+                        "page": source_doc.metadata.get(
+                            "page",
+                            "unknown"
+                        ),
+                        "content": source_doc.page_content[:300]
+                    }
+                ]
+            }
 
     print("\n========== MMR RETRIEVAL RESULTS ==========")
 
@@ -111,6 +150,46 @@ def ask_question(question: str):
         ]
     }
 
+def rerank_documents(question, docs):
+
+    pairs = [
+        (question, doc.page_content)
+        for doc in docs
+    ]
+
+    scores = reranker.predict(pairs)
+
+    ranked = sorted(
+        zip(docs, scores),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+    print("\n========== RERANK SCORES ==========")
+
+    for doc, score in ranked:
+        print(
+            f"{score:.4f} | "
+            f"{doc.metadata.get('source_file')}"
+        )
+
+    return [doc for doc, _ in ranked]
+
+def extract_email(docs):
+
+    pattern = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+
+    for doc in docs:
+
+        match = re.search(
+            pattern,
+            doc.page_content
+        )
+
+        if match:
+            return match.group(), doc
+
+    return None
 
 if __name__ == "__main__":
 
