@@ -29,12 +29,6 @@ def load_documents():
         )
 
         docs = loader.load()
-        print("\n===== OCR TEST =====")
-        print("FILE:", file)
-        print("\n===== FIRST 10 OCR ELEMENTS =====")
-        for i, doc in enumerate(docs[:10]):
-            print(f"\nElement {i + 1}")
-            print(doc.page_content)
 
         print("Pages:", len(docs))
 
@@ -54,8 +48,8 @@ def load_documents():
 
 def split_documents(documents):
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
+        chunk_size=1500,
+        chunk_overlap=300
     )
 
     return splitter.split_documents(documents)
@@ -84,7 +78,7 @@ def create_vector_store(chunks):
     print(f"\nValid Chunks: {len(chunks)}")
 
     embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
+        model_name="BAAI/bge-base-en-v1.5"
     )
 
     Chroma.from_documents(

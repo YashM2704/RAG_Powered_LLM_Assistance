@@ -1,6 +1,6 @@
 #  RAG-Powered LLM Assistant
 
-A production-ready Retrieval-Augmented Generation (RAG) system that enables intelligent question-answering over your documents using local LLMs. Built with FastAPI, LangChain, and Ollama.
+End-to-End Retrieval-Augmented Generation System (RAG) that enables intelligent question-answering over your documents using local LLMs. Built with FastAPI, LangChain, and Ollama.
 
 ## ✨ Features
 
@@ -186,9 +186,9 @@ Edit `app/config.py` to customize:
 DATA_DIR = BASE_DIR / "data" / "documents"
 CHROMA_DB_DIR = BASE_DIR / "chroma_db"
 
-# Model settings (for future OpenAI integration)
-EMBEDDING_MODEL = "text-embedding-3-small"
-LLM_MODEL = "gpt-4o-mini"
+# Model settings (for future BAAI/bge-base-en-v1.5)
+EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+LLM_MODEL = "Llama 3 via Ollama"
 ```
 
 ## 🔧 Advanced Usage
@@ -210,8 +210,8 @@ In `app/rag.py`, adjust the MMR parameters:
 ```python
 docs = vector_store.max_marginal_relevance_search(
     query=question,
-    k=8,        # Number of documents to return
-    fetch_k=20  # Number of documents to fetch before MMR
+    k=4,        # Number of documents to return
+    fetch_k=10  # Number of documents to fetch before MMR
 )
 ```
 
@@ -221,8 +221,8 @@ In `app/ingest.py`, modify the text splitter:
 
 ```python
 splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,    # Characters per chunk
-    chunk_overlap=200   # Overlap between chunks
+    chunk_size=1500,    # Characters per chunk
+    chunk_overlap=300   # Overlap between chunks
 )
 ```
 
@@ -232,7 +232,7 @@ splitter = RecursiveCharacterTextSplitter(
 - **[LangChain](https://python.langchain.com/)**: LLM application framework
 - **[ChromaDB](https://www.trychroma.com/)**: Vector database
 - **[Ollama](https://ollama.ai/)**: Local LLM runtime (Llama 3)
-- **[HuggingFace Transformers](https://huggingface.co/)**: Embeddings (all-MiniLM-L6-v2)
+- **[HuggingFace Transformers](https://huggingface.co/)**: Embeddings (BAAI/bge-base-en-v1.5)
 - **[Unstructured](https://unstructured.io/)**: PDF parsing with OCR support
 
 ## 🎯 Use Cases

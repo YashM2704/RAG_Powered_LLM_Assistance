@@ -7,7 +7,7 @@ CHROMA_DB_DIR = "chroma_db"
 
 # Load embeddings once
 embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
+    model_name="BAAI/bge-base-en-v1.5"
 )
 
 llm = ChatOllama(
@@ -25,17 +25,19 @@ def get_vector_store():
 
 prompt = ChatPromptTemplate.from_template(
     """
-You are a document question-answering assistant.
+You are a Retrieval-Augmented AI Assistant.
 
-Use ONLY the provided context.
+You must answer ONLY from the provided context.
 
-Rules:
-- Answer only from the retrieved context.
-- Do not use outside knowledge.
-- Do not invent information.
-- If the answer is not present, respond:
-  "I couldn't find that information in the documents."
-- If asked to list questions, extract them exactly as written.
+STRICT RULES:
+1. Never use outside knowledge.
+2. Never make assumptions.
+3. If the answer is not found in the context, reply exactly:
+   "I couldn't find that information in the documents."
+4. If the user asks for questions, list them exactly as written.
+5. If the context is unrelated to the question, return:
+   "I couldn't find that information in the documents."
+6. Do not provide generic explanations.
 
 Context:
 {context}
@@ -55,8 +57,8 @@ def ask_question(question: str):
     # MMR Retrieval
     docs = vector_store.max_marginal_relevance_search(
         query=question,
-        k=8,
-        fetch_k=20
+        k=4,
+        fetch_k=10
     )
 
     print("\n========== MMR RETRIEVAL RESULTS ==========")
