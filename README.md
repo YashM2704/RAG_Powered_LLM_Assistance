@@ -210,8 +210,8 @@ In `app/rag.py`, adjust the MMR parameters:
 ```python
 docs = vector_store.max_marginal_relevance_search(
     query=question,
-    k=4,        # Number of documents to return
-    fetch_k=10  # Number of documents to fetch before MMR
+    k=10,        # Number of documents to return
+    fetch_k=20  # Number of documents to fetch before MMR
 )
 ```
 
