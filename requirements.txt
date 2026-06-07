@@ -17,3 +17,5 @@ pillow
 fastapi
 uvicorn
 python-multipart
+
+opensearch-py
