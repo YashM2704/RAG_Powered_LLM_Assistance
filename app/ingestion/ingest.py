@@ -3,7 +3,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_community.vectorstores.utils import filter_complex_metadata
-
+from app.opensearch_client import create_index
+from app.opensearch_indexer import index_chunks
 import os
 import shutil
 
@@ -25,18 +26,19 @@ def load_documents():
 
         loader = UnstructuredPDFLoader(
             pdf_path,
-            mode="single"
+            mode="elements"
         )
 
         docs = loader.load()
 
         print("Pages:", len(docs))
+        
+        print("\n===== SAMPLE ELEMENTS =====")
 
-        for i, doc in enumerate(docs):
-            print(
-                f"Page {i + 1} chars:",
-                len(doc.page_content)
-            )
+        for i, doc in enumerate(docs[:25]):
+            print(f"\nElement {i + 1}")
+            print(doc.page_content)
+            print("-" * 80)
 
             # IMPORTANT: Store filename metadata
             doc.metadata["source_file"] = file
@@ -63,11 +65,39 @@ def create_vector_store(chunks):
         for chunk in chunks
         if chunk.page_content.strip()
     ]
-
+    
+    # Remove very small chunks
+    chunks = [
+        chunk
+        for chunk in chunks
+        if len(chunk.page_content.strip()) >=40
+    ]
+    
+    # Remove noisy OCR chunks
+    NOISE_PATTERNS = [
+        "Page 1 of",
+        "Page 2 of",
+        "Assignment No:",
+        "Date of Submission",
+        "Professional Summary",
+        "Projects",
+        "Skills",
+        "Experience"
+    ]
+    filtered_chunks = []
+    for chunk in chunks:
+        text = chunk.page_content.strip()
+        if any(
+            pattern in text
+            for pattern in NOISE_PATTERNS
+        ):
+            continue
+        filtered_chunks.append(chunk)
+    chunks = filtered_chunks
+    
     # Remove metadata Chroma cannot store
     chunks = filter_complex_metadata(chunks)
 
-    # Keep only simple metadata types
     for chunk in chunks:
         chunk.metadata = {
             k: v
@@ -76,11 +106,23 @@ def create_vector_store(chunks):
         }
 
     print(f"\nValid Chunks: {len(chunks)}")
+    
+    print(f"\nChunks after cleaning: {len(chunks)}")
 
     embeddings = HuggingFaceEmbeddings(
         model_name="BAAI/bge-base-en-v1.5"
     )
 
+    # NEW
+    create_index()
+
+    # NEW
+    index_chunks(
+        chunks,
+        embeddings
+    )
+
+    # Existing Chroma indexing
     Chroma.from_documents(
         documents=chunks,
         embedding=embeddings,
