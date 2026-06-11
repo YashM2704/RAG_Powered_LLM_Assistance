@@ -2,7 +2,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from sentence_transformers import CrossEncoder
-from app.retrieval.opensearch_retriever import dense_search
+from app.retrieval.hybrid_retriever import hybrid_search
 import re
 
 # Embedding model
@@ -103,11 +103,11 @@ def ask_question(question: str):
 
     question_lower = question.lower()
 
-    # OpenSearch Dense Retrieval
-    docs = dense_search(
-        question,
-        k=10
-    )
+    # OpenSearch hybrid search Retrieval
+    docs = hybrid_search(
+    question,
+    k=10
+)
 
     docs = rerank_documents(
         question,

@@ -35,10 +35,10 @@ def load_documents():
         
         print("\n===== SAMPLE ELEMENTS =====")
 
-        for i, doc in enumerate(docs[:25]):
-            print(f"\nElement {i + 1}")
+        for i, doc in enumerate(docs[:20]):
+            print("\n------------------")
+            print(f"ELEMENT {i+1}")
             print(doc.page_content)
-            print("-" * 80)
 
             # IMPORTANT: Store filename metadata
             doc.metadata["source_file"] = file
