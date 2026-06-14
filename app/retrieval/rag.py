@@ -1,27 +1,17 @@
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import ChatOllama
-from langchain_core.prompts import ChatPromptTemplate
-from sentence_transformers import CrossEncoder
-from app.retrieval.hybrid_retriever import hybrid_search
+from app.retrieval.metadata_retriever import (
+    deduplicate_documents,
+    filter_administrative_noise,
+    format_document_wide_answer,
+    is_document_wide_query,
+    retrieve_by_document_reference,
+)
 import re
 
-# Embedding model
-embeddings = HuggingFaceEmbeddings(
-    model_name="BAAI/bge-base-en-v1.5"
-)
+_llm = None
+_reranker = None
+_prompt = None
 
-# LLM
-llm = ChatOllama(
-    model="llama3"
-)
-
-# Reranker
-reranker = CrossEncoder(
-    "cross-encoder/ms-marco-MiniLM-L-6-v2"
-)
-
-prompt = ChatPromptTemplate.from_template(
-    """
+PROMPT_TEMPLATE = """
 You are a Retrieval-Augmented AI Assistant.
 
 You must answer ONLY from the provided context.
@@ -50,10 +40,59 @@ Question:
 
 Answer:
 """
-)
 
+
+def get_llm():
+    global _llm
+
+    if _llm is None:
+        from langchain_ollama import ChatOllama
+
+        _llm = ChatOllama(
+            model="llama3"
+        )
+
+    return _llm
+
+
+def get_prompt():
+    global _prompt
+
+    if _prompt is None:
+        from langchain_core.prompts import ChatPromptTemplate
+
+        _prompt = ChatPromptTemplate.from_template(
+            PROMPT_TEMPLATE
+        )
+
+    return _prompt
+
+
+def get_reranker():
+    global _reranker
+
+    if _reranker is None:
+        from sentence_transformers import CrossEncoder
+
+        _reranker = CrossEncoder(
+            "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        )
+
+    return _reranker
+
+
+def run_hybrid_search(query: str, k: int = 10):
+    from app.retrieval.hybrid_retriever import hybrid_search
+
+    return hybrid_search(
+        query,
+        k=k
+    )
 
 def rerank_documents(question, docs):
+
+    if not docs:
+        return []
 
     pairs = [
         (
@@ -63,7 +102,7 @@ def rerank_documents(question, docs):
         for doc in docs
     ]
 
-    scores = reranker.predict(pairs)
+    scores = get_reranker().predict(pairs)
 
     ranked = sorted(
         zip(docs, scores),
@@ -102,19 +141,66 @@ def extract_email(docs):
 def ask_question(question: str):
 
     question_lower = question.lower()
+    document_wide_query = is_document_wide_query(question)
 
-    # OpenSearch hybrid search Retrieval
-    docs = hybrid_search(
-    question,
-    k=10
-)
-
-    docs = rerank_documents(
-        question,
-        docs
+    docs, matched_source_files = retrieve_by_document_reference(
+        question
     )
 
-    docs = docs[:4]
+    if matched_source_files:
+        print(
+            "\nMetadata filter matched source_file:",
+            ", ".join(matched_source_files)
+        )
+    else:
+        # OpenSearch hybrid search Retrieval
+        docs = run_hybrid_search(
+            question,
+            k=10
+        )
+
+        docs = filter_administrative_noise(
+            deduplicate_documents(docs)
+        )
+
+        docs = rerank_documents(
+            question,
+            docs
+        )
+
+        docs = docs[:4]
+
+    if matched_source_files and document_wide_query:
+        print("\n========== DOCUMENT-WIDE RETRIEVAL RESULTS ==========")
+
+        for rank, doc in enumerate(docs, start=1):
+            print(f"\nChunk: {rank}")
+            print(
+                "Source File:",
+                doc["_source"].get(
+                    "source_file",
+                    "unknown"
+                )
+            )
+            print(doc["_source"]["content"])
+            print("-" * 80)
+
+        return {
+            "answer": format_document_wide_answer(docs),
+            "sources": [
+                {
+                    "file": doc["_source"].get(
+                        "source_file",
+                        "unknown"
+                    ),
+                    "content": doc["_source"].get(
+                        "content",
+                        ""
+                    )
+                }
+                for doc in docs
+            ]
+        }
 
     # Exact email extraction
     if "email" in question_lower:
@@ -143,7 +229,9 @@ def ask_question(question: str):
 
     print("\n========== RETRIEVAL RESULTS ==========")
 
-    for rank, doc in enumerate(docs, start=1):
+    displayed_docs = docs[:10]
+
+    for rank, doc in enumerate(displayed_docs, start=1):
 
         print(f"\nRank: {rank}")
 
@@ -161,12 +249,18 @@ def ask_question(question: str):
 
         print("-" * 80)
 
+    if len(docs) > len(displayed_docs):
+        print(
+            f"... {len(docs) - len(displayed_docs)} more chunks omitted "
+            "from debug output"
+        )
+
     context = "\n\n".join(
         doc["_source"]["content"]
         for doc in docs
     )
 
-    chain = prompt | llm
+    chain = get_prompt() | get_llm()
 
     response = chain.invoke({
         "context": context,

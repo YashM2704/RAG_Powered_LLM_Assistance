@@ -14,19 +14,28 @@ def index_chunks(chunks, embeddings):
         texts
     )
 
+    source_chunk_counts = {}
+
     for chunk, vector in zip(
         chunks,
         vectors
     ):
+        source_file = chunk.metadata.get(
+            "source_file",
+            "unknown"
+        )
+        source_chunk_index = source_chunk_counts.get(
+            source_file,
+            0
+        )
+        source_chunk_counts[source_file] = source_chunk_index + 1
 
         client.index(
             index=INDEX_NAME,
             body={
                 "content": chunk.page_content,
-                "source_file": chunk.metadata.get(
-                    "source_file",
-                    "unknown"
-                ),
+                "source_file": source_file,
+                "source_chunk_index": source_chunk_index,
                 "embedding": vector
             }
         )

@@ -36,6 +36,10 @@ def create_index():
                     "type": "keyword"
                 },
 
+                "source_chunk_index": {
+                    "type": "integer"
+                },
+
                 "embedding": {
                     "type": "knn_vector",
                     "dimension": 768

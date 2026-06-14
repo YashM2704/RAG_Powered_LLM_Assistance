@@ -7,6 +7,7 @@ from app.opensearch_client import create_index
 from app.opensearch_indexer import index_chunks
 import os
 import shutil
+import re
 
 PDF_FOLDER = "data/documents"
 CHROMA_DB_DIR = "chroma_db"
@@ -31,6 +32,10 @@ def load_documents():
 
         docs = loader.load()
 
+        for doc in docs:
+            # Store filename metadata on every element before splitting.
+            doc.metadata["source_file"] = file
+
         print("Pages:", len(docs))
         
         print("\n===== SAMPLE ELEMENTS =====")
@@ -39,9 +44,6 @@ def load_documents():
             print("\n------------------")
             print(f"ELEMENT {i+1}")
             print(doc.page_content)
-
-            # IMPORTANT: Store filename metadata
-            doc.metadata["source_file"] = file
 
         documents.extend(docs)
 
@@ -65,39 +67,80 @@ def create_vector_store(chunks):
         for chunk in chunks
         if chunk.page_content.strip()
     ]
-    
+
+    NOISE_PATTERNS = [
+        "record no",
+        "revision",
+        "university",
+        "date of submission",
+        "subject teacher",
+        "learn | grow | achieve",
+        "page 1 of",
+        "page 2 of",
+        "maximum marks",
+        "semester",
+        "department/program",
+        "name & sign",
+        "academic year",
+        "pimpri chinchwad university"
+    ]
+
+    clean_chunks = []
+
+    for chunk in chunks:
+
+        text = chunk.page_content.strip()
+
+        # ----------------------------
+        # OCR CLEANING
+        # Example:
+        # "a a Explain PCA..."
+        # becomes:
+        # "Explain PCA..."
+        # ----------------------------
+        text = re.sub(
+            r'^\s*[a-zA-Z]\s+[a-zA-Z]\s+',
+            '',
+            text
+        )
+
+        # Remove repeated whitespace
+        text = re.sub(
+            r'\s+',
+            ' ',
+            text
+        ).strip()
+
+        chunk.page_content = text
+
+        text_lower = text.lower()
+
+        # ----------------------------
+        # NOISE FILTERING
+        # ----------------------------
+        if any(
+            pattern in text_lower
+            for pattern in NOISE_PATTERNS
+        ):
+            continue
+
+        clean_chunks.append(chunk)
+
+    chunks = clean_chunks
+
     # Remove very small chunks
     chunks = [
         chunk
         for chunk in chunks
-        if len(chunk.page_content.strip()) >=40
+        if len(chunk.page_content.strip()) >= 40
     ]
-    
-    # Remove noisy OCR chunks
-    NOISE_PATTERNS = [
-        "Page 1 of",
-        "Page 2 of",
-        "Assignment No:",
-        "Date of Submission",
-        "Professional Summary",
-        "Projects",
-        "Skills",
-        "Experience"
-    ]
-    filtered_chunks = []
-    for chunk in chunks:
-        text = chunk.page_content.strip()
-        if any(
-            pattern in text
-            for pattern in NOISE_PATTERNS
-        ):
-            continue
-        filtered_chunks.append(chunk)
-    chunks = filtered_chunks
-    
+
+    print(f"\nChunks after cleaning: {len(chunks)}")
+
     # Remove metadata Chroma cannot store
     chunks = filter_complex_metadata(chunks)
 
+    # Keep only simple metadata types
     for chunk in chunks:
         chunk.metadata = {
             k: v
@@ -105,30 +148,25 @@ def create_vector_store(chunks):
             if isinstance(v, (str, int, float, bool))
         }
 
-    print(f"\nValid Chunks: {len(chunks)}")
-    
-    print(f"\nChunks after cleaning: {len(chunks)}")
-
     embeddings = HuggingFaceEmbeddings(
         model_name="BAAI/bge-base-en-v1.5"
     )
 
-    # NEW
+    # Create OpenSearch index if missing
     create_index()
 
-    # NEW
+    # Index into OpenSearch
     index_chunks(
         chunks,
         embeddings
     )
 
-    # Existing Chroma indexing
+    # Persist in Chroma
     Chroma.from_documents(
         documents=chunks,
         embedding=embeddings,
         persist_directory=CHROMA_DB_DIR
     )
-
 
 def ingest_documents():
 
